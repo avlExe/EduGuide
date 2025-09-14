@@ -31,9 +31,11 @@ const PORT = process.env.PORT || 5000
 app.use(helmet())
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? [process.env.FRONTEND_URL || 'https://edu-guide-frontend.vercel.app'] 
+    ? ['https://edu-guide-frontend.vercel.app', 'https://edu-guide-frontend-jjg54do24-pavels-projects-5c575132.vercel.app'] 
     : ['http://localhost:3000', 'http://localhost:3001'],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }))
 
 // Rate limiting
