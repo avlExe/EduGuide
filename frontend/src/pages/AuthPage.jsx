@@ -6,24 +6,56 @@ import {
   Lock, 
   Eye, 
   EyeOff, 
-  Phone,
   ArrowLeft,
-  CheckCircle
+  CheckCircle,
+  X,
+  AlertCircle
 } from 'lucide-react'
 
 const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
+  const [showErrorModal, setShowErrorModal] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [modalType, setModalType] = useState('error') // 'error', 'success', 'validation'
+
+  // Функция перевода сообщений об ошибках с сервера
+  const translateErrorMessage = (message) => {
+    if (!message) return null
+    
+    const translations = {
+      'User with this email already exists': 'Пользователь с таким email уже существует',
+      'Invalid email or password': 'Неверный email или пароль',
+      'User not found': 'Пользователь не найден',
+      'Invalid credentials': 'Неверные учетные данные',
+      'Email is required': 'Email обязателен',
+      'Password is required': 'Пароль обязателен',
+      'Password must be at least 6 characters': 'Пароль должен содержать минимум 6 символов',
+      'Passwords do not match': 'Пароли не совпадают',
+      'Name is required': 'Имя обязательно',
+      'Surname is required': 'Фамилия обязательна',
+      'Please provide a valid email': 'Пожалуйста, введите корректный email',
+      'Please provide a valid phone number': 'Пожалуйста, введите корректный номер телефона',
+      'Role must be either student or parent': 'Роль должна быть "студент" или "родитель"',
+      'Password confirmation does not match password': 'Подтверждение пароля не совпадает с паролем',
+      'Internal server error': 'Внутренняя ошибка сервера',
+      'Something went wrong': 'Что-то пошло не так',
+      'Network error': 'Ошибка сети',
+      'Request timeout': 'Превышено время ожидания запроса'
+    }
+    
+    return translations[message] || message
+  }
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     confirmPassword: '',
-    phone: '',
     name: '',
     surname: '',
     role: 'student',
     agreeToTerms: false
   })
+
 
   // Проверяем URL параметры при загрузке
   useEffect(() => {
@@ -48,7 +80,7 @@ const AuthPage = () => {
     try {
       if (isLogin) {
         // Логика входа
-        const response = await fetch('http://localhost:5000/api/auth/login', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -65,11 +97,14 @@ const AuthPage = () => {
           localStorage.setItem('token', data.token)
           window.location.href = '/dashboard'
         } else {
-          alert(data.message || 'Ошибка входа')
+          setModalType('error')
+          const translatedMessage = translateErrorMessage(data.message)
+          setErrorMessage(translatedMessage || 'Неверный email или пароль')
+          setShowErrorModal(true)
         }
       } else {
         // Логика регистрации
-        const response = await fetch('http://localhost:5000/api/auth/register', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/register`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -78,7 +113,6 @@ const AuthPage = () => {
             name: formData.name,
             surname: formData.surname,
             email: formData.email,
-            phone: formData.phone,
             password: formData.password,
             confirmPassword: formData.confirmPassword,
             role: formData.role
@@ -125,15 +159,22 @@ const AuthPage = () => {
         } else {
           console.error('Registration error:', data)
           if (data.errors && data.errors.length > 0) {
-            alert('Ошибки валидации:\n' + data.errors.map(err => err.msg).join('\n'))
+            setModalType('validation')
+            setErrorMessage('Ошибки валидации:\n' + data.errors.map(err => err.msg).join('\n'))
+            setShowErrorModal(true)
           } else {
-            alert(data.message || 'Ошибка регистрации')
+            setModalType('error')
+            const translatedMessage = translateErrorMessage(data.message)
+            setErrorMessage(translatedMessage || 'Ошибка при создании аккаунта')
+            setShowErrorModal(true)
           }
         }
       }
     } catch (error) {
       console.error('Auth error:', error)
-      alert('Произошла ошибка. Попробуйте еще раз.')
+      setModalType('error')
+      setErrorMessage('Произошла ошибка соединения. Проверьте интернет и попробуйте еще раз.')
+      setShowErrorModal(true)
     }
   }
 
@@ -149,7 +190,7 @@ const AuthPage = () => {
         <span className="hidden sm:inline">На главную</span>
       </button>
 
-      <div className="w-full max-w-2xl">
+      <div className={`w-full ${isLogin ? 'max-w-md' : 'max-w-2xl'}`}>
         {/* Header */}
         <div className="text-center mb-4 sm:mb-6">
           {/* Логотип по центру */}
@@ -291,25 +332,6 @@ const AuthPage = () => {
               </div>
             </div>
 
-            {!isLogin && (
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Телефон
-                </label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    className="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-white placeholder-gray-400"
-                    placeholder="+7 (999) 123-45-67"
-                    required={!isLogin}
-                  />
-                </div>
-              </div>
-            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -401,13 +423,107 @@ const AuthPage = () => {
 
           {isLogin && (
             <div className="mt-4 text-center">
-              <button className="text-blue-400 hover:underline text-sm">
+              <button 
+                onClick={() => window.location.href = '/forgot-password'}
+                className="text-blue-400 hover:underline text-sm"
+              >
                 Забыл пароль?
               </button>
             </div>
           )}
         </motion.div>
       </div>
+
+      {/* Модальное окно */}
+      {showErrorModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowErrorModal(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-gray-800 rounded-xl p-6 max-w-md w-full border border-gray-700 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Заголовок с иконкой */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  modalType === 'error' ? 'bg-red-500/20' : 
+                  modalType === 'validation' ? 'bg-yellow-500/20' : 
+                  'bg-green-500/20'
+                }`}>
+                  {modalType === 'error' ? (
+                    <AlertCircle className="w-6 h-6 text-red-400" />
+                  ) : modalType === 'validation' ? (
+                    <AlertCircle className="w-6 h-6 text-yellow-400" />
+                  ) : (
+                    <CheckCircle className="w-6 h-6 text-green-400" />
+                  )}
+                </div>
+                <h3 className="text-xl font-bold text-white">
+                  {modalType === 'error' ? 'Ошибка' : 
+                   modalType === 'validation' ? 'Ошибки валидации' : 
+                   'Успешно'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowErrorModal(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Сообщение */}
+            <div className="mb-6">
+              {modalType === 'validation' ? (
+                <div className="text-gray-300">
+                  <p className="mb-3">Пожалуйста, исправьте следующие ошибки:</p>
+                  <ul className="space-y-2">
+                    {errorMessage.split('\n').map((error, index) => (
+                      <li key={index} className="flex items-start space-x-2">
+                        <span className="text-yellow-400 mt-1">•</span>
+                        <span>{error}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-gray-300 leading-relaxed">
+                  {errorMessage}
+                </p>
+              )}
+            </div>
+
+            {/* Кнопки */}
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowErrorModal(false)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 rounded-lg font-semibold transition-colors"
+              >
+                Понятно
+              </button>
+              {modalType === 'error' && isLogin && (
+                <button
+                  onClick={() => {
+                    setShowErrorModal(false)
+                    setIsLogin(false)
+                  }}
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-3 rounded-lg font-semibold transition-all duration-200"
+                >
+                  Зарегистрироваться
+                </button>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
     </div>
   )
 }

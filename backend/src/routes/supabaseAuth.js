@@ -1,11 +1,8 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
-import speakeasy from 'speakeasy'
-import qrcode from 'qrcode'
 import { body, validationResult } from 'express-validator'
-import User from '../models/User.js'
-import { sendEmail, sendSMS } from '../utils/notifications.js'
-import { authenticateToken } from '../middleware/auth.js'
+import { SupabaseUser } from '../models/SupabaseUser.js'
+import { sendEmail } from '../utils/notifications.js'
 
 const router = express.Router()
 
@@ -18,7 +15,7 @@ router.post('/register', [
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('role').isIn(['student', 'parent']).withMessage('Role must be either student or parent'),
   body('confirmPassword').custom((value, { req }) => {
-    if (value && value !== req.body.password) {
+    if (value !== req.body.password) {
       throw new Error('Password confirmation does not match password')
     }
     return true
@@ -41,7 +38,7 @@ router.post('/register', [
     console.log('Raw data from request:', { name, surname, email, role })
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email })
+    const existingUser = await SupabaseUser.findByEmail(email)
     
     if (existingUser) {
       return res.status(400).json({ 
@@ -50,26 +47,29 @@ router.post('/register', [
     }
 
     // Create new user
-    const user = new User({
+    const user = new SupabaseUser({
       name,
       surname,
       email,
       phone: phone || undefined,
-      password,
+      password_hash: password, // Will be hashed in save()
       role: role || 'student'
     })
+
+    // Hash password
+    await user.hashPassword()
 
     console.log('Creating user with data:', { name, surname, email, role })
 
     // Auto-verify email for development
-    user.isEmailVerified = true
+    user.is_email_verified = true
     await user.save()
 
     console.log('User saved successfully:', user.toSafeObject())
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role },
+      { userId: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     )
@@ -100,10 +100,10 @@ router.post('/login', [
       })
     }
 
-    const { email, password, twoFactorCode } = req.body
+    const { email, password } = req.body
 
     // Find user
-    const user = await User.findOne({ email })
+    const user = await SupabaseUser.findByEmail(email)
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' })
     }
@@ -125,40 +125,14 @@ router.post('/login', [
     // Reset login attempts on successful password check
     await user.resetLoginAttempts()
 
-    // Check 2FA if enabled
-    if (user.isTwoFactorEnabled) {
-      if (!twoFactorCode) {
-        return res.status(200).json({ 
-          message: '2FA required',
-          requiresTwoFactor: true,
-          tempToken: jwt.sign(
-            { userId: user._id, type: '2fa' },
-            process.env.JWT_SECRET,
-            { expiresIn: '5m' }
-          )
-        })
-      }
-
-      const verified = speakeasy.totp.verify({
-        secret: user.twoFactorSecret,
-        encoding: 'base32',
-        token: twoFactorCode,
-        window: 2
-      })
-
-      if (!verified) {
-        return res.status(401).json({ message: 'Invalid 2FA code' })
-      }
-    }
-
     // Update last login
-    user.lastLogin = new Date()
+    user.last_login = new Date()
     await user.save()
 
     // Generate JWT token
     const token = jwt.sign(
       { 
-        userId: user._id, 
+        userId: user.id, 
         email: user.email,
         type: 'access'
       },
@@ -178,16 +152,6 @@ router.post('/login', [
   }
 })
 
-// Verify email (simplified for development)
-router.post('/verify-email', async (req, res) => {
-  res.json({ message: 'Email verification not needed in development mode' })
-})
-
-// Resend verification email (simplified)
-router.post('/resend-verification', async (req, res) => {
-  res.json({ message: 'Email verification not needed in development mode' })
-})
-
 // Forgot password
 router.post('/forgot-password', [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email')
@@ -204,7 +168,7 @@ router.post('/forgot-password', [
     const { email } = req.body
 
     // Find user by email
-    const user = await User.findOne({ email })
+    const user = await SupabaseUser.findByEmail(email)
     if (!user) {
       // Don't reveal if user exists or not for security
       return res.json({ 
@@ -270,10 +234,7 @@ router.post('/reset-password', [
     const { token, password } = req.body
 
     // Find user by reset token
-    const user = await User.findOne({
-      passwordResetToken: token,
-      passwordResetExpires: { $gt: Date.now() }
-    })
+    const user = await SupabaseUser.findByPasswordResetToken(token)
 
     if (!user) {
       return res.status(400).json({ 
@@ -282,9 +243,10 @@ router.post('/reset-password', [
     }
 
     // Update password
-    user.password = password
-    user.passwordResetToken = undefined
-    user.passwordResetExpires = undefined
+    user.password_hash = password
+    await user.hashPassword()
+    user.password_reset_token = null
+    user.password_reset_expires = null
     await user.save()
 
     console.log('Password reset successfully for user:', user.email)
@@ -299,90 +261,11 @@ router.post('/reset-password', [
   }
 })
 
-// Setup 2FA (simplified)
-router.post('/setup-2fa', async (req, res) => {
-  res.json({ message: '2FA not available in development mode' })
-})
-
-// Verify 2FA setup (simplified)
-router.post('/verify-2fa', async (req, res) => {
-  res.json({ message: '2FA not available in development mode' })
-})
-
-// Disable 2FA (simplified)
-router.post('/disable-2fa', async (req, res) => {
-  res.json({ message: '2FA not available in development mode' })
-})
-
-// Link users (student and parent)
-router.post('/link-users', authenticateToken, async (req, res) => {
-  try {
-    const { studentEmail, parentEmail } = req.body
-    const currentUser = req.user
-
-    // Find both users
-    const student = await User.findOne({ email: studentEmail, role: 'student' })
-    const parent = await User.findOne({ email: parentEmail, role: 'parent' })
-
-    if (!student || !parent) {
-      return res.status(404).json({ 
-        message: 'Student or parent not found' 
-      })
-    }
-
-    // Check if current user is one of them
-    if (currentUser._id.toString() !== student._id.toString() && 
-        currentUser._id.toString() !== parent._id.toString()) {
-      return res.status(403).json({ 
-        message: 'You can only link your own accounts' 
-      })
-    }
-
-    // Link users
-    if (!student.linkedUsers.includes(parent._id)) {
-      student.linkedUsers.push(parent._id)
-      await student.save()
-    }
-
-    if (!parent.linkedUsers.includes(student._id)) {
-      parent.linkedUsers.push(student._id)
-      await parent.save()
-    }
-
-    res.json({
-      message: 'Users linked successfully',
-      student: student.toSafeObject(),
-      parent: parent.toSafeObject()
-    })
-
-  } catch (error) {
-    console.error('Link users error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
-// Get linked users
-router.get('/linked-users', authenticateToken, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id)
-      .populate('linkedUsers', 'name surname email role profile.grade')
-      .select('linkedUsers')
-
-    res.json({
-      linkedUsers: user.linkedUsers
-    })
-
-  } catch (error) {
-    console.error('Get linked users error:', error)
-    res.status(500).json({ message: 'Internal server error' })
-  }
-})
-
 // Search users by name and surname for linking
-router.get('/search-users', authenticateToken, async (req, res) => {
+router.get('/search-users', async (req, res) => {
   try {
     const { name, surname, role } = req.query
-    const currentUser = req.user
+    const currentUserId = req.user?.userId
 
     if (!name || !surname) {
       return res.status(400).json({ 
@@ -391,22 +274,13 @@ router.get('/search-users', authenticateToken, async (req, res) => {
     }
 
     // Search for users with matching name and surname
-    const searchQuery = {
-      name: { $regex: name, $options: 'i' },
-      surname: { $regex: surname, $options: 'i' },
-      _id: { $ne: currentUser._id } // Exclude current user
-    }
+    const users = await SupabaseUser.searchByName(name, surname, currentUserId)
 
-    if (role) {
-      searchQuery.role = role
-    }
-
-    const users = await User.find(searchQuery)
-      .select('name surname email role profile.grade')
-      .limit(10)
+    // Filter by role if specified
+    const filteredUsers = role ? users.filter(user => user.role === role) : users
 
     res.json({
-      users: users
+      users: filteredUsers
     })
 
   } catch (error) {

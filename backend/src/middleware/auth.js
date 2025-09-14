@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import MemoryUser from '../models/MemoryUser.js'
+import User from '../models/User.js'
 
 export const authenticateToken = async (req, res, next) => {
   try {
@@ -21,7 +21,7 @@ export const authenticateToken = async (req, res, next) => {
     }
 
     // Verify user still exists and is not locked
-    const user = await MemoryUser.findById(decoded.userId)
+    const user = await User.findById(decoded.userId)
     if (!user) {
       return res.status(401).json({ message: 'User not found' })
     }

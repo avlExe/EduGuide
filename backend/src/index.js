@@ -1,14 +1,28 @@
+// Load environment variables FIRST
+import dotenv from 'dotenv'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// Load .env file from the correct path FIRST
+dotenv.config({ path: join(__dirname, '..', '.env') })
+
+console.log('🔧 Environment loaded from .env file')
+console.log('NODE_ENV:', process.env.NODE_ENV)
+console.log('PORT:', process.env.PORT)
+console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? '✅ Set' : '❌ Missing')
+console.log('SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? '✅ Set' : '❌ Missing')
+
+// Now import other modules
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
-import dotenv from 'dotenv'
-import mongoose from 'mongoose'
 
-import authRoutes from './routes/auth.js'
+import authRoutes from './routes/supabaseAuth.js'
 import userRoutes from './routes/user.js'
-
-dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -32,18 +46,11 @@ app.use('/api/', limiter)
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true }))
+app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-// Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-assistant', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('✅ Connected to MongoDB'))
-.catch(err => {
-  console.error('❌ MongoDB connection error:', err)
-  console.log('⚠️  Running without database - some features may not work')
-})
+
+// Supabase connection (no explicit connection needed)
+console.log('✅ Using Supabase database')
 
 // Routes
 app.use('/api/auth', authRoutes)

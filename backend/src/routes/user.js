@@ -1,6 +1,6 @@
 import express from 'express'
 import { body, validationResult } from 'express-validator'
-import MemoryUser from '../models/MemoryUser.js'
+import User from '../models/User.js'
 import { authenticateToken } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -8,11 +8,14 @@ const router = express.Router()
 // Get user profile
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
-    const user = await MemoryUser.findById(req.user.userId)
+    console.log('Getting profile for user ID:', req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
+      console.log('User not found')
       return res.status(404).json({ message: 'User not found' })
     }
 
+    console.log('User found:', { name: user.name, surname: user.surname, email: user.email })
     res.json({ user: user.toSafeObject() })
   } catch (error) {
     console.error('Get profile error:', error)
@@ -37,7 +40,7 @@ router.put('/profile', authenticateToken, [
       })
     }
 
-    const user = await MemoryUser.findById(req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
@@ -86,7 +89,7 @@ router.post('/test-result', authenticateToken, [
 
     const { testId, testName, score, answers } = req.body
 
-    const user = await MemoryUser.findById(req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
@@ -121,7 +124,7 @@ router.post('/test-result', authenticateToken, [
 // Get test results
 router.get('/test-results', authenticateToken, async (req, res) => {
   try {
-    const user = await MemoryUser.findById(req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
@@ -152,7 +155,7 @@ router.post('/recommendation', authenticateToken, [
 
     const { type, title, description, match, details } = req.body
 
-    const user = await MemoryUser.findById(req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
@@ -182,7 +185,7 @@ router.post('/recommendation', authenticateToken, [
 // Get recommendations
 router.get('/recommendations', authenticateToken, async (req, res) => {
   try {
-    const user = await MemoryUser.findById(req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
@@ -210,7 +213,7 @@ router.put('/recommendation/:id', authenticateToken, [
     const { id } = req.params
     const { saved } = req.body
 
-    const user = await MemoryUser.findById(req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
@@ -250,7 +253,7 @@ router.put('/preferences', authenticateToken, [
 
     const { notifications, privacy } = req.body
 
-    const user = await MemoryUser.findById(req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
@@ -291,7 +294,7 @@ router.delete('/account', authenticateToken, [
 
     const { password } = req.body
 
-    const user = await MemoryUser.findById(req.user.userId)
+    const user = await User.findById(req.user.userId)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
@@ -301,7 +304,7 @@ router.delete('/account', authenticateToken, [
       return res.status(401).json({ message: 'Invalid password' })
     }
 
-    await MemoryUser.findByIdAndDelete(req.user.userId)
+    await User.findByIdAndDelete(req.user.userId)
 
     res.json({ message: 'Account deleted successfully' })
 

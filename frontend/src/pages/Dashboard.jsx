@@ -15,7 +15,8 @@ import {
   Users,
   Link,
   Search,
-  X
+  X,
+  AlertCircle
 } from 'lucide-react'
 
 const Dashboard = () => {
@@ -24,14 +25,102 @@ const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [isSearching, setIsSearching] = useState(false)
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [modalMessage, setModalMessage] = useState('')
+  const [modalType, setModalType] = useState('success') // 'success', 'error'
 
+  // Функция перевода сообщений об ошибках с сервера
+  const translateErrorMessage = (message) => {
+    if (!message) return null
+    
+    const translations = {
+      'User not found': 'Пользователь не найден',
+      'Users already linked': 'Пользователи уже связаны',
+      'Cannot link to yourself': 'Нельзя связать аккаунт с самим собой',
+      'Link not found': 'Связь не найдена',
+      'Unauthorized': 'Не авторизован',
+      'Forbidden': 'Доступ запрещен',
+      'Internal server error': 'Внутренняя ошибка сервера',
+      'Something went wrong': 'Что-то пошло не так',
+      'Network error': 'Ошибка сети',
+      'Request timeout': 'Превышено время ожидания запроса'
+    }
+    
+    return translations[message] || message
+  }
+
+  // Загружаем данные пользователя при монтировании компонента
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        console.log('Token found:', !!token)
+        
+        if (!token) {
+          console.log('No token, redirecting to auth')
+          window.location.href = '/auth'
+          return
+        }
+
+        console.log('Fetching user profile...')
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/user/profile`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+
+        console.log('Response status:', response.status)
+
+        if (response.ok) {
+          const data = await response.json()
+          console.log('User data loaded:', data)
+          console.log('User name:', data.user?.name)
+          console.log('User surname:', data.user?.surname)
+          setUser(data.user)
+        } else if (response.status === 401) {
+          console.log('Unauthorized, removing token and redirecting')
+          localStorage.removeItem('token')
+          window.location.href = '/auth'
+          return
+        } else {
+          console.log('Error response, using fallback data')
+          // Используем fallback данные при любой другой ошибке
+          setUser({
+            name: 'Пользователь',
+            surname: '',
+            email: 'user@example.com',
+            role: 'student',
+            progress: 0
+          })
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error)
+        // В случае ошибки используем fallback данные
+        setUser({
+          name: 'Пользователь',
+          surname: '',
+          email: 'user@example.com',
+          role: 'student',
+          progress: 0
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadUserData()
+  }, [])
+
+  // Fallback данные если не удалось загрузить с сервера
   const mockData = {
-    user: {
-      name: 'Алексей',
-      surname: 'Петров',
-      email: 'alexey@example.com',
+    user: user || {
+      name: 'Пользователь',
+      surname: '',
+      email: 'user@example.com',
       role: 'student',
-      progress: 65
+      progress: 0
     },
     tests: [
       { id: 1, name: 'Профориентационный тест', completed: true, score: 85 },
@@ -63,7 +152,7 @@ const Dashboard = () => {
     
     setIsSearching(true)
     try {
-      const response = await fetch(`http://localhost:5000/api/auth/search-users?q=${encodeURIComponent(query)}&role=${mockData.user.role === 'student' ? 'parent' : 'student'}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/search-users?q=${encodeURIComponent(query)}&role=${mockData.user.role === 'student' ? 'parent' : 'student'}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -81,7 +170,7 @@ const Dashboard = () => {
   // Функция связывания аккаунтов
   const linkAccount = async (userId) => {
     try {
-      const response = await fetch('http://localhost:5000/api/auth/link-users', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/link-users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,17 +180,24 @@ const Dashboard = () => {
       })
       
       if (response.ok) {
-        alert('Аккаунты успешно связаны!')
+        setModalType('success')
+        setModalMessage('Аккаунты успешно связаны!')
+        setShowModal(true)
         setShowLinkModal(false)
         setSearchQuery('')
         setSearchResults([])
       } else {
         const data = await response.json()
-        alert(data.message || 'Ошибка при связывании аккаунтов')
+        setModalType('error')
+        const translatedMessage = translateErrorMessage(data.message)
+        setModalMessage(translatedMessage || 'Ошибка при связывании аккаунтов')
+        setShowModal(true)
       }
     } catch (error) {
       console.error('Link error:', error)
-      alert('Произошла ошибка при связывании аккаунтов')
+      setModalType('error')
+      setModalMessage('Произошла ошибка соединения при связывании аккаунтов')
+      setShowModal(true)
     }
   }
 
@@ -113,6 +209,28 @@ const Dashboard = () => {
     
     return () => clearTimeout(timeoutId)
   }, [searchQuery])
+
+  // Функция выхода из аккаунта
+  const handleLogout = () => {
+    // Удаляем токен из localStorage
+    localStorage.removeItem('token')
+    // Перенаправляем на главную страницу
+    window.location.href = '/'
+  }
+
+  // Показываем загрузку пока данные не загружены
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <Brain className="w-8 h-8 text-white" />
+          </div>
+          <p className="text-white text-lg">Загрузка...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
@@ -129,12 +247,19 @@ const Dashboard = () => {
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2 text-gray-300">
                 <User className="w-5 h-5" />
-                <span>{mockData.user.name} {mockData.user.surname}</span>
+                <span>
+                  {mockData.user.name || 'Пользователь'} 
+                  {mockData.user.surname && ` ${mockData.user.surname}`}
+                </span>
               </div>
               <button className="p-2 text-gray-400 hover:text-gray-300">
                 <Settings className="w-5 h-5" />
               </button>
-              <button className="p-2 text-gray-400 hover:text-gray-300">
+              <button 
+                onClick={handleLogout}
+                className="p-2 text-gray-400 hover:text-gray-300 transition-colors"
+                title="Выйти из аккаунта"
+              >
                 <LogOut className="w-5 h-5" />
               </button>
             </div>
@@ -477,6 +602,62 @@ const Dashboard = () => {
             </div>
           </motion.div>
         </div>
+      )}
+
+      {/* Модальное окно уведомлений */}
+      {showModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowModal(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-gray-800 rounded-xl p-6 max-w-md w-full border border-gray-700 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Заголовок с иконкой */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  modalType === 'success' ? 'bg-green-500/20' : 'bg-red-500/20'
+                }`}>
+                  {modalType === 'success' ? (
+                    <CheckCircle className="w-6 h-6 text-green-400" />
+                  ) : (
+                    <AlertCircle className="w-6 h-6 text-red-400" />
+                  )}
+                </div>
+                <h3 className="text-xl font-bold text-white">
+                  {modalType === 'success' ? 'Успешно!' : 'Ошибка'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Сообщение */}
+            <p className="text-gray-300 mb-6 leading-relaxed">
+              {modalMessage}
+            </p>
+
+            {/* Кнопка */}
+            <button
+              onClick={() => setShowModal(false)}
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-3 rounded-lg font-semibold transition-all duration-200"
+            >
+              Понятно
+            </button>
+          </motion.div>
+        </motion.div>
       )}
     </div>
   )
